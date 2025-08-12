@@ -1,0 +1,26 @@
+{
+  "name": "data-transfer-utility",
+  "version": "1.0.0",
+  "description": "Utility for transferring Excel data to PostgreSQL database",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "pg": "^8.11.3",
+    "uuid": "^9.0.1",
+    "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "excel",
+    "postgresql",
+    "data-import"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
