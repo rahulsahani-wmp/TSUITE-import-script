@@ -33,10 +33,6 @@ const mapping = mappingSheet.getSheetValues().slice(1).map(r => ({
     targetField: r[3],          // DestinationColumn
     collection: r[4],           // Table
     datatype: r[5],             // DataType
-    transform: null,
-    lookupCollection: null,
-    lookupField: null,
-    returnField: null,
     mandatory: (r[6] || '').toString().toLowerCase() === 'yes'
 }));
 
@@ -45,9 +41,22 @@ const mapping = mappingSheet.getSheetValues().slice(1).map(r => ({
             parent: r[1],
             child: r[2],
             childFK: r[3],
-            referenceColumn: r[4]
+            referenceColumn: r[4],
+            lookupField: r[5] || 'name'
         }))
         : [];
+
+// Add lookup info from relations
+mapping.forEach(map => {
+    const relation = relations.find(r => 
+        r.child === map.collection && r.childFK === map.targetField
+    );
+    if (relation) {
+        map.lookupCollection = relation.parent;
+        map.lookupField = relation.lookupField;
+        map.returnField = relation.referenceColumn;
+    }
+});
     return { mapping, relations };
 }
 // ---------------- Build Table Graph ----------------
@@ -123,15 +132,23 @@ async function parseDataExcel(dataFilePath, mappingConfig, generatedKeys) {
                         value = transformLib[map.datatype](value);
                     }
                     
-                    // Lookup from DB if mapping specifies
-                    if (map.lookupCollection && map.lookupField && map.returnField) {
-                        const lookupMap = await getLookupMap(map.lookupCollection, map.lookupField, map.returnField);
-                        value = lookupMap[value] || null;
+                    // Lookup from DB using relations
+                    if (map.lookupCollection && map.lookupField && map.returnField && value) {
+                        try {
+                            const lookupMap = await getLookupMap(map.lookupCollection, map.lookupField, map.returnField);
+                            const lookupValue = lookupMap[String(value).trim()];
+                            if (lookupValue !== undefined) {
+                                value = lookupValue;
+                            }
+                        } catch (err) {
+                            console.log(`Lookup failed for ${map.targetField}: ${err.message}`);
+                        }
                     }
                     
                     // Lookup from generated keys if child FK
-                    if (generatedKeys[map.lookupCollection]?.[value]) {
-                        value = generatedKeys[map.lookupCollection][value];
+                    const originalValue = String(value).trim();
+                    if (generatedKeys[map.lookupCollection]?.[originalValue]) {
+                        value = generatedKeys[map.lookupCollection][originalValue];
                     }
                     
                     record[map.targetField] = value;
@@ -164,9 +181,11 @@ async function insertInOrder(order, results) {
 // console.log('With values:', vals);
 const res = await client.query(queryText, vals);
             const id = res.rows[0].id;
-            // Assuming one identifiable "natural key" is present to map back for children
-            const keyField = cols.find(c => c.endsWith('name')) || cols[0];
-            generatedKeys[table][row[keyField]] = id;
+            // Store generated keys for lookups - use multiple possible key fields
+            const keyField = cols.find(c => c.endsWith('name')) || cols.find(c => c.includes('name')) || cols[0];
+            if (row[keyField]) {
+                generatedKeys[table][String(row[keyField]).trim()] = id;
+            }
         }
     }
     return generatedKeys;
