@@ -36,6 +36,7 @@ const mapping = mappingSheet.getSheetValues().slice(1).map(r => ({
     mandatory: (r[6] || '').toString().toLowerCase() === 'yes'
 }));
 
+
     const relations = relationSheet
         ? relationSheet.getSheetValues().slice(2).map(r => ({
             parent: r[1],
@@ -45,6 +46,8 @@ const mapping = mappingSheet.getSheetValues().slice(1).map(r => ({
             lookupField: r[5] || 'name'
         }))
         : [];
+
+
 
 // Add lookup info from relations
 mapping.forEach(map => {
@@ -57,6 +60,8 @@ mapping.forEach(map => {
         map.returnField = relation.referenceColumn;
     }
 });
+
+
     return { mapping, relations };
 }
 // ---------------- Build Table Graph ----------------
@@ -86,10 +91,12 @@ const lookupCache = {};
 async function getLookupMap(collection, field, returnField) {
     const key = `${collection}_${field}_${returnField}`;
     if (lookupCache[key]) return lookupCache[key];
-    const res = await client.query(`SELECT ${field}, ${returnField} FROM ${collection}`);
+    
+    const query = `SELECT ${field} as lookup_key, ${returnField} FROM ${collection}`;
+    const res = await client.query(query);
     const map = {};
     res.rows.forEach(r => {
-        map[String(r[field]).trim()] = r[returnField];
+        map[String(r.lookup_key).trim()] = r[returnField];
     });
     lookupCache[key] = map;
     return map;
@@ -141,7 +148,7 @@ async function parseDataExcel(dataFilePath, mappingConfig, generatedKeys) {
                                 value = lookupValue;
                             }
                         } catch (err) {
-                            console.log(`Lookup failed for ${map.targetField}: ${err.message}`);
+                            // Lookup failed, keep original value
                         }
                     }
                     
@@ -163,7 +170,7 @@ async function parseDataExcel(dataFilePath, mappingConfig, generatedKeys) {
         }
     }
     
-    console.log('Parsed results:', results);
+ console.log('Parsed results:', results);
     return results;
 }
 // ---------------- Insert Data in Order ----------------
@@ -177,8 +184,7 @@ async function insertInOrder(order, results) {
             const vals = Object.values(row);
             const placeholders = cols.map((_, i) => `$${i + 1}`).join(',');
             const queryText = `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders}) RETURNING id`;
-// console.log('Executing query:=========', queryText);
-// console.log('With values:', vals);
+
 const res = await client.query(queryText, vals);
             const id = res.rows[0].id;
             // Store generated keys for lookups - use multiple possible key fields
@@ -197,12 +203,13 @@ const res = await client.query(queryText, vals);
         const { mapping, relations } = await loadMappingSheets(path.join(__dirname, 'mapping.xlsx'));
         const graph = buildTableGraph(relations);
         const order = dfsOrder(graph);
-        // console.log('Insert order by dependencies:', order);
+
         // Initial pass: no generated keys yet
         let parsedResults = await parseDataExcel(path.join(__dirname, 'data.xlsx'), mapping, {});
         
         const generatedKeys = await insertInOrder(order, parsedResults);
-        // console.log('Generated IDs for relationships:', generatedKeys);
+
+        console.log('Data transfer completed successfully!');
         await client.end();
     } catch (err) {
         console.error('Error in import', err);
